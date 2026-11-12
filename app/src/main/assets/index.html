@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0}
+body{font:14px system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<script src="shim.js"></script>
+</head>
+<body>
+<title>Ward Chart</title>
+<style>
+/* Layout: a ward observation chart — one ruled column of rows, status marked in the right margin */
+:root{
+  --paper:#E9EDF1; --card:#FFFFFF; --ink:#141D26; --soft:#5C6E7E; --rule:#D2DAE2;
+  --accent:#1C5C8C; --accent-wash:#DCE8F2;
+  --late:#A82F26; --late-wash:#F7E1DE;
+  --done:#2C6A4E; --done-wash:#DBEBE2;
+  --font-ui:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0F151B; --card:#18212A; --ink:#E2EAF1; --soft:#8DA0B1; --rule:#28343E;
+  --accent:#6FB2E2; --accent-wash:#16293A;
+  --late:#E87765; --late-wash:#36201D;
+  --done:#64B790; --done-wash:#16291F;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --paper:#0F151B; --card:#18212A; --ink:#E2EAF1; --soft:#8DA0B1; --rule:#28343E;
+  --accent:#6FB2E2; --accent-wash:#16293A;
+  --late:#E87765; --late-wash:#36201D;
+  --done:#64B790; --done-wash:#16291F;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-ui);font-size:15px;line-height:1.45;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--card)}
+.wrap{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--card);border-bottom:1px solid var(--rule)}
+.top-in{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 0}
+.datum{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.datum h1{font-size:19px;font-weight:700;margin:0;letter-spacing:-.01em}
+.datum .meta{font-family:var(--font-mono);font-size:11.5px;color:var(--soft);font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:2px;margin-top:10px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{appearance:none;background:none;border:0;border-bottom:2px solid transparent;color:var(--soft);font-family:var(--font-ui);font-size:12.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:7px 11px;cursor:pointer;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* sections */
+section{margin-top:22px}
+.sec-head{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.sec-head h2{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--soft);margin:0}
+.sec-head .ln{flex:1;height:1px;background:var(--rule)}
+.sec-head .ct{font-family:var(--font-mono);font-size:11px;color:var(--soft);font-variant-numeric:tabular-nums}
+
+/* chart rows */
+.chart{background:var(--card);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.row{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;border-bottom:1px solid var(--rule);min-width:0}
+.row:last-child{border-bottom:0}
+.row.is-done .label{color:var(--soft);text-decoration:line-through;text-decoration-thickness:1px}
+.tick{appearance:none;flex:none;width:21px;height:21px;margin:0;border:1.5px solid var(--rule);border-radius:3px;background:var(--card);cursor:pointer;position:relative;transition:background .12s,border-color .12s}
+.tick:hover{border-color:var(--accent)}
+.tick:checked{background:var(--done);border-color:var(--done)}
+.tick:checked::after{content:"";position:absolute;left:6.5px;top:2.5px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
+.tick:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.body{flex:1;min-width:0}
+.label{font-size:14.5px;font-weight:500;overflow-wrap:anywhere}
+.sub{font-family:var(--font-mono);font-size:11px;color:var(--soft);margin-top:2px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.margin{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+
+/* status chips */
+.chip{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2.5px 6px;border-radius:2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.late{background:var(--late-wash);color:var(--late)}
+.chip.now{background:var(--accent-wash);color:var(--accent)}
+.chip.ok{background:var(--done-wash);color:var(--done)}
+.chip.flat{background:transparent;color:var(--soft);border:1px solid var(--rule)}
+.stripe{border-left:3px solid transparent}
+.stripe.late{border-left-color:var(--late)}
+.stripe.now{border-left-color:var(--accent)}
+
+/* buttons */
+.btn{appearance:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:3px;padding:6px 11px;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn.solid{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.solid:hover{opacity:.9;color:#fff}
+.btn.sm{font-size:11px;padding:4px 8px}
+.btn.danger:hover{border-color:var(--late);color:var(--late)}
+.grp{font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);margin-top:6px}
+.grp.first{margin-top:0}
+.btn:disabled{opacity:.3;cursor:default}
+.btn:disabled:hover{border-color:var(--rule);color:var(--ink)}
+.btn-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+
+/* judgement pair */
+.judge{display:flex;gap:6px}
+.judge .btn{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;padding:5px 9px}
+.judge .solid-ok{background:var(--done);border-color:var(--done);color:#fff}
+.judge .solid-ok:hover{opacity:.9;color:#fff}
+
+/* forms */
+input[type=text],select,textarea{font-family:var(--font-ui);font-size:14px;color:var(--ink);background:var(--card);border:1px solid var(--rule);border-radius:3px;padding:8px 10px;width:100%;min-width:0}
+input[type=number]{font-family:var(--font-mono);font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--rule);border-radius:3px;padding:5px 7px;width:62px;text-align:center;font-variant-numeric:tabular-nums}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+textarea{font-family:var(--font-mono);font-size:11.5px;min-height:110px;resize:vertical}
+.form{background:var(--card);border:1px solid var(--rule);border-radius:3px;padding:13px;display:flex;flex-direction:column;gap:9px}
+.form-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.form-line>select{flex:0 0 auto;width:auto;min-width:134px}
+.form-line>input[type=text]{flex:1 1 180px}
+
+/* notes */
+.note{font-size:12.5px;color:var(--soft);line-height:1.5;margin-top:9px}
+.note strong{color:var(--ink);font-weight:600}
+.empty{background:var(--card);border:1px dashed var(--rule);border-radius:3px;padding:18px 15px;text-align:center;color:var(--soft);font-size:13.5px}
+.banner{background:var(--late-wash);color:var(--late);border:1px solid var(--late);border-radius:3px;padding:9px 12px;font-size:12.5px;margin-top:12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--paper);font-size:12.5px;font-weight:500;padding:9px 15px;border-radius:3px;z-index:30;box-shadow:0 4px 18px rgba(0,0,0,.26)}
+.stat{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11.5px;color:var(--soft);font-variant-numeric:tabular-nums;margin-top:8px}
+.stat b{color:var(--ink);font-weight:600}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="top"><div class="top-in">
+  <div class="datum">
+    <h1 id="dateline">Today</h1>
+    <span class="meta" id="counters"></span>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="today" aria-selected="true">Today</button>
+    <button class="tab" role="tab" data-tab="revision" aria-selected="false">Revision</button>
+    <button class="tab" role="tab" data-tab="chores" aria-selected="false">Chores</button>
+    <button class="tab" role="tab" data-tab="alerts" aria-selected="false">Alerts</button>
+    <button class="tab" role="tab" data-tab="setup" aria-selected="false">Setup</button>
+  </div>
+</div></div>
+
+<div class="wrap">
+  <div id="offline" class="banner" hidden>Changes in this view will not be saved.</div>
+  <div id="view"></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- dates (local, never UTC) ---------- */
+function ds(d){var t=new Date(d.getTime()-d.getTimezoneOffset()*6e4);return t.toISOString().slice(0,10);}
+function today(){return ds(new Date());}
+function addDays(s,n){var p=s.split("-").map(Number);return ds(new Date(p[0],p[1]-1,p[2]+n));}
+function diffDays(a,b){var x=a.split("-").map(Number),y=b.split("-").map(Number);
+  return Math.round((Date.UTC(y[0],y[1]-1,y[2])-Date.UTC(x[0],x[1]-1,x[2]))/864e5);}
+function pretty(s){var p=s.split("-").map(Number);var d=new Date(p[0],p[1]-1,p[2]);
+  return d.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});}
+function relative(due,t){var n=diffDays(t,due);
+  if(n<0)return{text:(-n)+"d late",cls:"late"};
+  if(n===0)return{text:"today",cls:"now"};
+  if(n===1)return{text:"tomorrow",cls:"flat"};
+  return{text:"in "+n+"d",cls:"flat"};}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+
+/* ---------- defaults ---------- */
+var DEFAULT_CONFIG={
+  version:1,
+  cap:4,
+  intervals:[3,10,30,90,180],
+  subjects:["Anatomy","Physiology","Biochemistry"],
+  bands:["Morning","Lunch","Evening","Night"],
+  blocks:[
+    {id:"bed",band:"Morning",label:"Make the bed",note:"90 seconds, before anything else",floor:true},
+    {id:"sink1",band:"Morning",label:"Sink block — meds, floss, brush",floor:true},
+    {id:"move",band:"Morning",label:"Movement — walk or bodyweight",note:"20 min; 10 is enough on a bad day",floor:true},
+    {id:"bfast",band:"Morning",label:"Breakfast + two Bengali words"},
+    {id:"golden",band:"Morning",label:"Golden block — yesterday recalled on blank paper",note:"30 min, handwritten, before class",floor:true},
+    {id:"notes",band:"Lunch",label:"Class notes by hand"},
+    {id:"anki",band:"Lunch",label:"Anki in the gaps between sessions"},
+    {id:"dissect",band:"Lunch",label:"Dissection hall — full attention"},
+    {id:"dust",band:"Evening",label:"Dust the desk and screens",note:"60 seconds; it starts the study block"},
+    {id:"study1",band:"Evening",label:"Recall pass + read aloud standing",note:"blank page first, gaps in another colour"},
+    {id:"home",band:"Evening",label:"Call home"},
+    {id:"records",band:"Evening",label:"Practical records and journals"},
+    {id:"dinner",band:"Night",label:"Dinner + protein"},
+    {id:"walk2",band:"Night",label:"Walk with whoever's around"},
+    {id:"flex",band:"Night",label:"Third study block or flex"},
+    {id:"read",band:"Night",label:"Reading, newspaper or writing"},
+    {id:"sink2",band:"Night",label:"Sink block — floss, skincare, night meds",floor:true},
+    {id:"out",band:"Night",label:"Lights out, phone across the room",note:"by 11:00"}
+  ],
+  chores:[
+    {id:"laundry",label:"Laundry run",every:3,note:"keeps the shelf queue from starving"},
+    {id:"towel",label:"Towel wash",every:4,note:"humidity sours them fast"},
+    {id:"sheets",label:"Bedsheet + pillowcase",every:10},
+    {id:"air",label:"Air the pillow and mattress in the sun",every:14,note:"mildew is the hostel's real enemy"},
+    {id:"swap",label:"Air the suitcase, check for damp",every:45,note:"mildew is the risk, not uneven wear"},
+    {id:"deep",label:"Room deep clean — fan, ledges, under the bed",every:7},
+    {id:"bottle",label:"Scrub the water bottle",every:3},
+    {id:"stock",label:"Restock protein, bananas, chana",every:7},
+    {id:"nails",label:"Nails",every:10},
+    {id:"shoes",label:"Polish and air the shoes",every:14,note:"a damp campus eats leather"},
+    {id:"review",label:"Weekly review — weak topics, plan the week",every:7}
+  ]
+};
+var BAND_ORDER=["Morning","Lunch","Noon","Afternoon","College","Evening","Night"];
+function normalizeConfig(c){
+  if(!c||typeof c!=="object")return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  if(!Array.isArray(c.blocks))c.blocks=[];
+  if(!Array.isArray(c.chores))c.chores=[];
+  if(!Array.isArray(c.intervals)||!c.intervals.length)c.intervals=DEFAULT_CONFIG.intervals.slice();
+  if(!Array.isArray(c.subjects)||!c.subjects.length)c.subjects=DEFAULT_CONFIG.subjects.slice();
+  if(!c.cap||c.cap<1)c.cap=DEFAULT_CONFIG.cap;
+  if(!Array.isArray(c.bands)||!c.bands.length){
+    var seen=[];
+    c.blocks.forEach(function(b){if(b.band&&seen.indexOf(b.band)<0)seen.push(b.band);});
+    seen.sort(function(x,y){
+      var ix=BAND_ORDER.indexOf(x),iy=BAND_ORDER.indexOf(y);
+      return (ix<0?99:ix)-(iy<0?99:iy);
+    });
+    c.bands=seen.length?seen:DEFAULT_CONFIG.bands.slice();
+  }
+  return c;
+}
+function renameBand(i,name){
+  var old=cfg.bands[i];
+  if(!name||name===old){render();return;}
+  if(cfg.bands.indexOf(name)>-1){toast("There is already a divider called that.");render();return;}
+  cfg.bands[i]=name;
+  cfg.blocks.forEach(function(b){if(b.band===old)b.band=name;});
+  saveConfig(); render();
+}
+function moveBand(i,dir){
+  var j=i+dir; if(j<0||j>=cfg.bands.length)return;
+  var t=cfg.bands[i]; cfg.bands[i]=cfg.bands[j]; cfg.bands[j]=t;
+  saveConfig(); render();
+}
+function removeBand(i){
+  if(cfg.bands.length<2){toast("Keep at least one divider.");return;}
+  var name=cfg.bands[i], moved=0;
+  cfg.bands.splice(i,1);
+  var home=cfg.bands[0];
+  cfg.blocks.forEach(function(b){if(b.band===name){b.band=home;moved++;}});
+  saveConfig(); render();
+  toast(moved?moved+(moved===1?" block":" blocks")+" moved to "+home:"Removed "+name);
+}
+function blockIndex(id){
+  for(var k=0;k<cfg.blocks.length;k++) if(cfg.blocks[k].id===id)return k;
+  return -1;
+}
+function moveBlock(id,dir){
+  var i=blockIndex(id); if(i<0)return;
+  var band=cfg.blocks[i].band,j=-1,k;
+  if(dir<0){for(k=i-1;k>=0;k--)if(cfg.blocks[k].band===band){j=k;break;}}
+  else{for(k=i+1;k<cfg.blocks.length;k++)if(cfg.blocks[k].band===band){j=k;break;}}
+  if(j<0)return;
+  var t=cfg.blocks[i];cfg.blocks[i]=cfg.blocks[j];cfg.blocks[j]=t;
+  saveConfig();render();
+}
+function removeBlock(id){
+  var i=blockIndex(id); if(i<0)return;
+  cfg.blocks.splice(i,1); saveConfig(); render();
+}
+function addBlock(band,label){
+  var at=cfg.blocks.length;
+  for(var k=cfg.blocks.length-1;k>=0;k--){if(cfg.blocks[k].band===band){at=k+1;break;}}
+  cfg.blocks.splice(at,0,{id:uid(),band:band,label:label,floor:false});
+  saveConfig(); render();
+}
+function addBand(name){
+  if(cfg.bands.indexOf(name)>-1){toast("Already there.");return;}
+  cfg.bands.push(name); saveConfig(); render(); toast("Added "+name);
+}
+
+/* ---------- state ---------- */
+var cfg=JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+var choreDone={}, dayLog={}, topics=[];
+var db=null, dl=null, ready=false, tab="today", toastTimer=null;
+try{var sv=localStorage.getItem("wc_tab"); if(sv)tab=sv;}catch(e){}
+
+function toast(msg){
+  var old=document.querySelector(".toast"); if(old)old.remove();
+  var el=document.createElement("div"); el.className="toast"; el.textContent=msg;
+  document.body.appendChild(el);
+  clearTimeout(toastTimer); toastTimer=setTimeout(function(){el.remove();},2200);
+}
+
+/* ---------- write queue: one write at a time per document ---------- */
+var queues={};
+function write(path,body){
+  if(!db)return Promise.resolve();
+  queues[path]=(queues[path]||Promise.resolve()).then(function(){
+    return db.doc(path).set(body);
+  }).catch(function(e){
+    var c=e&&e.code;
+    if(c==="quota_exceeded")toast("Storage is full — delete some old topics.");
+    else if(c==="invalid_argument")toast("This view can't save changes.");
+    else toast("Couldn't save that. Try again.");
+  });
+  return queues[path];
+}
+var logTimer=null;
+function saveLog(){clearTimeout(logTimer);logTimer=setTimeout(function(){
+  var keys=Object.keys(dayLog).sort();
+  while(keys.length>150){delete dayLog[keys.shift()];}
+  write("state/days",{log:dayLog});
+  WardReminders.push();
+},350);}
+function saveChores(){write("state/chores",{done:choreDone});WardReminders.push();}
+function saveConfig(){write("config/main",cfg);WardReminders.push();}
+function saveTopic(t){
+  if(!db)return;
+  var path="topics/"+t.id;
+  queues[path]=(queues[path]||Promise.resolve()).then(function(){
+    return db.doc(path).set({subject:t.subject,title:t.title,taught:t.taught,due:t.due,
+      stage:t.stage,reviews:t.reviews,lastReviewed:t.lastReviewed||null,example:!!t.example});
+  }).catch(function(){toast("Couldn't save that topic.");});
+}
+function deleteTopic(id){
+  topics=topics.filter(function(t){return t.id!==id;});
+  if(db)db.doc("topics/"+id).delete().catch(function(){});
+  render();
+}
+
+/* ---------- derived ---------- */
+function doneToday(){return dayLog[today()]||[];}
+function isDone(id){return doneToday().indexOf(id)>-1;}
+function toggleBlock(id){
+  var t=today(); var arr=dayLog[t]?dayLog[t].slice():[];
+  var i=arr.indexOf(id);
+  if(i>-1)arr.splice(i,1); else {arr.push(id); WardReminders.dismiss("block",id);}
+  dayLog[t]=arr; saveLog(); render();
+}
+function choreDue(c){
+  var last=choreDone[c.id];
+  if(!last)return today();
+  return addDays(last,c.every);
+}
+function dueChores(){
+  var t=today();
+  return cfg.chores.filter(function(c){return diffDays(t,choreDue(c))<=0;})
+    .sort(function(a,b){return choreDue(a)<choreDue(b)?-1:1;});
+}
+function dueTopics(){
+  var t=today();
+  return topics.filter(function(x){return diffDays(t,x.due)<=0;})
+    .sort(function(a,b){return a.due<b.due?-1:(a.due>b.due?1:0);});
+}
+function streak(){
+  var n=0,d=today();
+  if(!dayLog[d]||!dayLog[d].length)d=addDays(d,-1);
+  while(dayLog[d]&&dayLog[d].length){n++;d=addDays(d,-1);}
+  return n;
+}
+function floorIds(){return cfg.blocks.filter(function(b){return b.floor;}).map(function(b){return b.id;});}
+
+/* ---------- actions ---------- */
+function doChore(c){
+  choreDone[c.id]=today(); saveChores(); WardReminders.dismiss("chore",c.id);
+  toast(c.label+" — next in "+c.every+" days"); render();
+}
+function pushChore(c){
+  choreDone[c.id]=addDays(today(),-(c.every-1)); saveChores();
+  toast("Pushed to tomorrow"); render();
+}
+function reviewTopic(t,solid){
+  var stage=solid?Math.min(t.stage+1,cfg.intervals.length-1):Math.max(t.stage-1,0);
+  t.stage=stage; t.reviews=(t.reviews||0)+1; t.lastReviewed=today();
+  t.due=addDays(today(),cfg.intervals[stage]);
+  saveTopic(t);
+  toast(solid?"Back in "+cfg.intervals[stage]+" days":"Again in "+cfg.intervals[stage]+" days");
+  render();
+}
+function pushTopic(t){t.due=addDays(today(),1);saveTopic(t);toast("Pushed to tomorrow");render();}
+function addTopic(subject,title){
+  var t={id:uid(),subject:subject,title:title,taught:today(),due:addDays(today(),cfg.intervals[0]),
+    stage:0,reviews:0,lastReviewed:null,example:false};
+  topics.push(t); saveTopic(t); render();
+}
+function lightDay(){
+  var t=today(),n=0,floor=floorIds();
+  dueChores().forEach(function(c){choreDone[c.id]=addDays(t,-(c.every-1));n++;});
+  dueTopics().forEach(function(x){x.due=addDays(t,1);saveTopic(x);n++;});
+  saveChores(); render();
+  toast(n?n+" pushed to tomorrow — the floor still stands":"Nothing to push");
+}
+
+/* ---------- render ---------- */
+var view=document.getElementById("view");
+function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
+function section(title,count){
+  var s=el("section"),h=el("div","sec-head");
+  h.appendChild(el("h2",null,title)); h.appendChild(el("div","ln"));
+  if(count!=null)h.appendChild(el("span","ct",count));
+  s.appendChild(h); return s;
+}
+function chart(){return el("div","chart");}
+
+function blockRow(b){
+  var done=isDone(b.id);
+  var r=el("div","row"+(done?" is-done":""));
+  var cb=document.createElement("input");
+  cb.type="checkbox"; cb.className="tick"; cb.checked=done; cb.id="blk-"+b.id;
+  cb.setAttribute("aria-label",b.label);
+  cb.addEventListener("change",function(){toggleBlock(b.id);});
+  var body=el("div","body");
+  body.appendChild(el("div","label",b.label));
+  if(b.note)body.appendChild(el("div","sub",b.note));
+  r.appendChild(cb); r.appendChild(body);
+  if(b.floor){var m=el("div","margin");m.appendChild(el("span","chip flat","floor"));r.appendChild(m);}
+  return r;
+}
+function choreRow(c,showNext){
+  var t=today(),due=choreDue(c),rel=relative(due,t);
+  var r=el("div","row stripe "+(rel.cls==="late"?"late":rel.cls==="now"?"now":""));
+  var body=el("div","body");
+  body.appendChild(el("div","label",c.label));
+  var bits=["every "+c.every+"d"];
+  if(choreDone[c.id])bits.push("last "+choreDone[c.id]);
+  if(showNext)bits.push("next "+due);
+  if(c.note)bits.push(c.note);
+  body.appendChild(el("div","sub",bits.join("  ·  ")));
+  var m=el("div","margin");
+  m.appendChild(el("span","chip "+rel.cls,rel.text));
+  var j=el("div","judge");
+  var dn=el("button","btn sm judge solid-ok","Done");
+  dn.className="btn sm"; dn.style.background="var(--done)"; dn.style.borderColor="var(--done)"; dn.style.color="#fff";
+  dn.addEventListener("click",function(){doChore(c);});
+  j.appendChild(dn);
+  if(diffDays(t,due)<=0){
+    var ps=el("button","btn sm","Push");
+    ps.addEventListener("click",function(){pushChore(c);});
+    j.appendChild(ps);
+  }
+  m.appendChild(j);
+  r.appendChild(body); r.appendChild(m);
+  return r;
+}
+function topicRow(t,actionable){
+  var d=today(),rel=relative(t.due,d);
+  var r=el("div","row stripe "+(rel.cls==="late"?"late":rel.cls==="now"?"now":""));
+  var body=el("div","body");
+  var lab=el("div","label",t.title);
+  body.appendChild(lab);
+  var bits=[t.subject,"pass "+(t.stage+1)+"/"+cfg.intervals.length,"taught "+t.taught];
+  if(t.example)bits.push("example");
+  body.appendChild(el("div","sub",bits.join("  ·  ")));
+  var m=el("div","margin");
+  m.appendChild(el("span","chip "+rel.cls,rel.text));
+  var j=el("div","judge");
+  if(actionable){
+    var ok=el("button","btn sm","Solid");
+    ok.style.background="var(--done)";ok.style.borderColor="var(--done)";ok.style.color="#fff";
+    ok.addEventListener("click",function(){reviewTopic(t,true);});
+    var no=el("button","btn sm","Shaky");
+    no.addEventListener("click",function(){reviewTopic(t,false);});
+    var ps=el("button","btn sm","Push");
+    ps.addEventListener("click",function(){pushTopic(t);});
+    j.appendChild(ok);j.appendChild(no);j.appendChild(ps);
+  }else{
+    var del=el("button","btn sm danger","Remove");
+    del.addEventListener("click",function(){deleteTopic(t.id);});
+    j.appendChild(del);
+  }
+  m.appendChild(j);
+  r.appendChild(body); r.appendChild(m);
+  return r;
+}
+
+function renderToday(){
+  var frag=document.createDocumentFragment();
+  var t=today();
+  var chores=dueChores(), tops=dueTopics();
+  var capped=tops.slice(0,Math.max(1,cfg.cap|0));
+  var hidden=tops.length-capped.length;
+
+  if(chores.length||capped.length){
+    var s=section("Due today",String(chores.length+capped.length));
+    var c=chart();
+    chores.forEach(function(x){c.appendChild(choreRow(x,false));});
+    capped.forEach(function(x){c.appendChild(topicRow(x,true));});
+    s.appendChild(c);
+    if(hidden>0){
+      var n=el("div","note");
+      n.innerHTML="<strong>"+hidden+" more topic"+(hidden===1?"":"s")+" waiting.</strong> Held back on purpose — a queue that shows everything overdue is a queue people abandon. Raise the cap in Setup if "+cfg.cap+" a day is too easy.";
+      s.appendChild(n);
+    }
+    frag.appendChild(s);
+  }else{
+    var s0=section("Due today","0");
+    s0.appendChild(el("div","empty","Nothing due. Everything is where it should be."));
+    frag.appendChild(s0);
+  }
+
+  cfg.bands.forEach(function(band){
+    var items=cfg.blocks.filter(function(b){return b.band===band;});
+    if(!items.length)return;
+    var done=items.filter(function(b){return isDone(b.id);}).length;
+    var s=section(band,done+"/"+items.length);
+    var c=chart();
+    items.forEach(function(b){c.appendChild(blockRow(b));});
+    s.appendChild(c); frag.appendChild(s);
+  });
+  var orphans=cfg.blocks.filter(function(b){return cfg.bands.indexOf(b.band)<0;});
+  if(orphans.length){
+    var od=orphans.filter(function(b){return isDone(b.id);}).length;
+    var so=section("Unsorted",od+"/"+orphans.length);
+    var co=chart();
+    orphans.forEach(function(b){co.appendChild(blockRow(b));});
+    so.appendChild(co); frag.appendChild(so);
+  }
+
+  var s2=el("section"),br=el("div","btn-row");
+  var lb=el("button","btn","Light day — push what's due");
+  lb.addEventListener("click",lightDay);
+  br.appendChild(lb);
+  s2.appendChild(br);
+  var fl=el("div","note");
+  fl.innerHTML="<strong>The floor.</strong> On a bad day do only the rows marked <em>floor</em>: bed, sink block, ten minutes of movement, thirty minutes of recall, sink block again. Miss once and it's noise. Miss twice and it's a new habit.";
+  s2.appendChild(fl);
+  frag.appendChild(s2);
+  return frag;
+}
+
+function renderRevision(){
+  var frag=document.createDocumentFragment();
+  var s=el("section");
+  var f=el("div","form");
+  var line=el("div","form-line");
+  var sel=document.createElement("select"); sel.id="t-subject";
+  cfg.subjects.forEach(function(x){var o=document.createElement("option");o.value=x;o.textContent=x;sel.appendChild(o);});
+  var inp=document.createElement("input"); inp.type="text"; inp.id="t-title";
+  inp.placeholder="Topic taught today — e.g. Brachial plexus: cords and branches";
+  var add=el("button","btn solid","Log it");
+  function submit(){
+    var v=inp.value.trim(); if(!v)return;
+    addTopic(sel.value,v); inp.value="";
+    toast("Logged — first pass in "+cfg.intervals[0]+" days");
+  }
+  add.addEventListener("click",submit);
+  inp.addEventListener("keydown",function(e){if(e.key==="Enter")submit();});
+  line.appendChild(sel); line.appendChild(inp); line.appendChild(add);
+  f.appendChild(line);
+  var hint=el("div","note");
+  hint.innerHTML="Log the <strong>topic</strong>, not the facts — facts belong in Anki. One line per lecture, at the end of the day. Passes run "+cfg.intervals.join(" → ")+" days apart, and <em>Shaky</em> drops it back a pass.";
+  f.appendChild(hint);
+  s.appendChild(f);
+  frag.appendChild(s);
+
+  var t=today();
+  var due=dueTopics();
+  if(due.length){
+    var sd=section("Due now",String(due.length));
+    var cd=chart(); due.forEach(function(x){cd.appendChild(topicRow(x,true));});
+    sd.appendChild(cd); frag.appendChild(sd);
+  }
+  var later=topics.filter(function(x){return diffDays(t,x.due)>0;})
+    .sort(function(a,b){return a.due<b.due?-1:1;});
+  var ss=section("Scheduled",String(later.length));
+  if(later.length){
+    var cs=chart(); later.forEach(function(x){cs.appendChild(topicRow(x,false));});
+    ss.appendChild(cs);
+  }else{
+    ss.appendChild(el("div","empty","Nothing scheduled ahead yet. Log today's lectures above."));
+  }
+  frag.appendChild(ss);
+
+  if(topics.some(function(x){return x.example;})){
+    var sx=el("section"),b=el("div","btn-row");
+    var cl=el("button","btn danger","Clear the three example topics");
+    cl.addEventListener("click",function(){
+      topics.filter(function(x){return x.example;}).forEach(function(x){
+        if(db)db.doc("topics/"+x.id).delete().catch(function(){});
+      });
+      topics=topics.filter(function(x){return !x.example;});
+      render(); toast("Examples cleared");
+    });
+    b.appendChild(cl); sx.appendChild(b); frag.appendChild(sx);
+  }
+  return frag;
+}
+
+function renderChores(){
+  var frag=document.createDocumentFragment();
+  var s=section("Rolling cadence",String(cfg.chores.length));
+  var c=chart();
+  cfg.chores.slice().sort(function(a,b){return choreDue(a)<choreDue(b)?-1:1;})
+    .forEach(function(x){c.appendChild(choreRow(x,true));});
+  s.appendChild(c);
+  var n=el("div","note");
+  n.innerHTML="<strong>Nothing here is tied to a weekday.</strong> Each chore is due a fixed number of days after you last did it, so doing it late just moves the next one — there is no backlog to clear and nothing to reschedule. Change any interval below.";
+  s.appendChild(n);
+  frag.appendChild(s);
+
+  var s2=section("Add, remove, re-time");
+  var f=el("div","form");
+  cfg.chores.forEach(function(ch,i){
+    var line=el("div","form-line");
+    var lb=document.createElement("input"); lb.type="text"; lb.value=ch.label;
+    lb.style.flex="1 1 170px"; lb.setAttribute("aria-label","Chore name");
+    lb.addEventListener("change",function(){ch.label=lb.value.trim()||ch.label;saveConfig();});
+    var num=document.createElement("input"); num.type="number"; num.min="1"; num.max="365"; num.value=ch.every;
+    num.setAttribute("aria-label","Days between "+ch.label);
+    num.addEventListener("change",function(){
+      var v=parseInt(num.value,10); if(!v||v<1){num.value=ch.every;return;}
+      ch.every=v; saveConfig(); render();
+    });
+    var unit=el("span","sub","days");
+    var rm=el("button","btn sm danger","Remove");
+    rm.addEventListener("click",function(){
+      cfg.chores.splice(i,1); delete choreDone[ch.id];
+      saveConfig(); saveChores(); render(); toast("Removed");
+    });
+    line.appendChild(lb); line.appendChild(num); line.appendChild(unit); line.appendChild(rm);
+    f.appendChild(line);
+  });
+  var al=el("div","form-line");
+  var ai=document.createElement("input"); ai.type="text";
+  ai.placeholder="Add a chore"; ai.style.flex="1 1 170px";
+  ai.setAttribute("aria-label","New chore name");
+  var an=document.createElement("input"); an.type="number"; an.min="1"; an.max="365"; an.value="7";
+  an.setAttribute("aria-label","Days between");
+  var ab=el("button","btn solid","Add");
+  function newChore(){
+    var v=ai.value.trim(); if(!v)return;
+    var n=parseInt(an.value,10); if(!n||n<1)n=7;
+    cfg.chores.push({id:uid(),label:v,every:n});
+    saveConfig(); render(); toast(v+" — every "+n+" days");
+  }
+  ab.addEventListener("click",newChore);
+  ai.addEventListener("keydown",function(e){if(e.key==="Enter")newChore();});
+  al.appendChild(ai); al.appendChild(an); al.appendChild(el("span","sub","days")); al.appendChild(ab);
+  f.appendChild(al);
+  s2.appendChild(f); frag.appendChild(s2);
+  return frag;
+}
+
+function renderSetup(){
+  var frag=document.createDocumentFragment();
+
+  var s0=section("Dividers",String(cfg.bands.length));
+  var f0=el("div","form");
+  cfg.bands.forEach(function(band,i){
+    var line=el("div","form-line");
+    var inp=document.createElement("input"); inp.type="text"; inp.value=band;
+    inp.style.flex="1 1 150px"; inp.setAttribute("aria-label","Divider name");
+    inp.addEventListener("change",function(){renameBand(i,inp.value.trim());});
+    var up=el("button","btn sm","\u2191");
+    up.setAttribute("aria-label","Move "+band+" earlier"); up.disabled=(i===0);
+    up.addEventListener("click",function(){moveBand(i,-1);});
+    var dn=el("button","btn sm","\u2193");
+    dn.setAttribute("aria-label","Move "+band+" later"); dn.disabled=(i===cfg.bands.length-1);
+    dn.addEventListener("click",function(){moveBand(i,1);});
+    var ct=cfg.blocks.filter(function(b){return b.band===band;}).length;
+    line.appendChild(inp); line.appendChild(up); line.appendChild(dn);
+    line.appendChild(el("span","sub",ct+(ct===1?" block":" blocks")));
+    var rm=el("button","btn sm danger","Remove");
+    rm.addEventListener("click",function(){removeBand(i);});
+    line.appendChild(rm);
+    f0.appendChild(line);
+  });
+  var bl=el("div","form-line");
+  var bi=document.createElement("input"); bi.type="text";
+  bi.placeholder="Add a divider \u2014 e.g. Afternoon"; bi.style.flex="1 1 170px";
+  bi.setAttribute("aria-label","New divider name");
+  var bb=el("button","btn solid","Add");
+  function submitBand(){var v=bi.value.trim(); if(!v)return; addBand(v); bi.value="";}
+  bb.addEventListener("click",submitBand);
+  bi.addEventListener("keydown",function(e){if(e.key==="Enter")submitBand();});
+  bl.appendChild(bi); bl.appendChild(bb);
+  f0.appendChild(bl);
+  s0.appendChild(f0);
+  var n0=el("div","note");
+  n0.innerHTML="Dividers are the headings the Today list is split into. Rename one and every block inside it follows. Remove one and its blocks drop into <strong>"+(cfg.bands[0]||"the first divider")+"</strong> rather than vanishing.";
+  s0.appendChild(n0);
+  frag.appendChild(s0);
+
+  var s1=section("Daily blocks",String(cfg.blocks.length));
+  var f1=el("div","form");
+  var groups=cfg.bands.slice();
+  var loose=cfg.blocks.filter(function(b){return cfg.bands.indexOf(b.band)<0;});
+  var looseBands=[];
+  loose.forEach(function(b){if(looseBands.indexOf(b.band)<0)looseBands.push(b.band);});
+  groups=groups.concat(looseBands);
+
+  groups.forEach(function(band,gi){
+    var items=cfg.blocks.filter(function(b){return b.band===band;});
+    var head=el("div","grp"+(gi===0?" first":""),band+(items.length?"":"  \u00b7  empty"));
+    f1.appendChild(head);
+    items.forEach(function(b,bi){
+      var line=el("div","form-line");
+      var inp=document.createElement("input"); inp.type="text"; inp.value=b.label;
+      inp.style.flex="1 1 150px"; inp.setAttribute("aria-label","Block name");
+      inp.addEventListener("change",function(){b.label=inp.value.trim()||b.label;saveConfig();});
+      var up=el("button","btn sm","\u2191");
+      up.setAttribute("aria-label","Move "+b.label+" earlier"); up.disabled=(bi===0);
+      up.addEventListener("click",function(){moveBlock(b.id,-1);});
+      var dn=el("button","btn sm","\u2193");
+      dn.setAttribute("aria-label","Move "+b.label+" later"); dn.disabled=(bi===items.length-1);
+      dn.addEventListener("click",function(){moveBlock(b.id,1);});
+      var sel=document.createElement("select"); sel.setAttribute("aria-label","Divider");
+      var opts=cfg.bands.slice(); if(opts.indexOf(b.band)<0)opts.push(b.band);
+      opts.forEach(function(x){var o=document.createElement("option");o.value=x;o.textContent=x;
+        if(x===b.band)o.selected=true;sel.appendChild(o);});
+      sel.addEventListener("change",function(){b.band=sel.value;saveConfig();render();});
+      var fl=el("button","btn sm",b.floor?"Floor":"Optional");
+      fl.addEventListener("click",function(){b.floor=!b.floor;saveConfig();render();});
+      var rm=el("button","btn sm danger","Remove");
+      rm.addEventListener("click",function(){removeBlock(b.id);});
+      line.appendChild(inp);line.appendChild(up);line.appendChild(dn);
+      line.appendChild(sel);line.appendChild(fl);line.appendChild(rm);
+      f1.appendChild(line);
+    });
+  });
+
+  var addLine=el("div","form-line");
+  var ni=document.createElement("input");ni.type="text";ni.placeholder="Add a block";
+  ni.style.flex="1 1 150px"; ni.setAttribute("aria-label","New block name");
+  var nb=document.createElement("select"); nb.setAttribute("aria-label","Divider");
+  cfg.bands.forEach(function(x){var o=document.createElement("option");o.value=x;o.textContent=x;nb.appendChild(o);});
+  var na=el("button","btn solid","Add");
+  function submitBlock(){
+    var v=ni.value.trim(); if(!v)return;
+    addBlock(nb.value,v);
+  }
+  na.addEventListener("click",submitBlock);
+  ni.addEventListener("keydown",function(e){if(e.key==="Enter")submitBlock();});
+  addLine.appendChild(ni);addLine.appendChild(nb);addLine.appendChild(na);
+  f1.appendChild(addLine);
+  s1.appendChild(f1);
+  var n1=el("div","note");
+  n1.innerHTML="Arrows reorder a block inside its divider; the dropdown moves it to another one. <strong>Add one thing at a time.</strong> Two to three weeks apart, and nothing new in the week before internals — whatever you added that week is what you'll drop, and it usually takes two others with it.";
+  s1.appendChild(n1);
+  frag.appendChild(s1);
+
+  var s2=section("Revision schedule");
+  var f2=el("div","form");
+  var il=el("div","form-line");
+  il.appendChild(el("div",null,"Passes, in days"));
+  cfg.intervals.forEach(function(v,i){
+    var num=document.createElement("input");num.type="number";num.min="1";num.max="720";num.value=v;
+    num.setAttribute("aria-label","Pass "+(i+1)+" interval");
+    num.addEventListener("change",function(){
+      var x=parseInt(num.value,10); if(!x||x<1){num.value=cfg.intervals[i];return;}
+      cfg.intervals[i]=x; saveConfig(); render();
+    });
+    il.appendChild(num);
+  });
+  f2.appendChild(il);
+  var cl=el("div","form-line");
+  cl.appendChild(el("div",null,"Topics shown per day"));
+  var cn=document.createElement("input");cn.type="number";cn.min="1";cn.max="30";cn.value=cfg.cap;
+  cn.setAttribute("aria-label","Topics shown per day");
+  cn.addEventListener("change",function(){
+    var x=parseInt(cn.value,10); if(!x||x<1){cn.value=cfg.cap;return;}
+    cfg.cap=x; saveConfig(); render();
+  });
+  cl.appendChild(cn);
+  f2.appendChild(cl);
+  var sl=el("div","form-line");
+  sl.appendChild(el("div",null,"Subjects"));
+  var si=document.createElement("input");si.type="text";si.value=cfg.subjects.join(", ");
+  si.setAttribute("aria-label","Subjects, comma separated");
+  si.addEventListener("change",function(){
+    var arr=si.value.split(",").map(function(x){return x.trim();}).filter(Boolean);
+    if(arr.length){cfg.subjects=arr;saveConfig();render();}
+  });
+  sl.appendChild(si);
+  f2.appendChild(sl);
+  s2.appendChild(f2);
+  frag.appendChild(s2);
+
+  var s3=section("Backup");
+  var f3=el("div","form");
+  var row=el("div","form-line");
+  var ex=el("button","btn","Export everything");
+  ex.addEventListener("click",exportAll);
+  var fi=document.createElement("input");fi.type="file";fi.accept=".json,application/json";
+  fi.style.display="none";
+  fi.addEventListener("change",function(){
+    var f=fi.files&&fi.files[0]; if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){importText(String(rd.result));fi.value="";};
+    rd.readAsText(f);
+  });
+  var im=el("button","btn","Import from file");
+  im.addEventListener("click",function(){fi.click();});
+  row.appendChild(ex);row.appendChild(im);row.appendChild(fi);
+  f3.appendChild(row);
+  var ta=document.createElement("textarea");
+  ta.placeholder="…or paste an exported backup here";
+  ta.setAttribute("aria-label","Paste backup JSON");
+  f3.appendChild(ta);
+  var pb=el("div","form-line");
+  var pi=el("button","btn solid","Import pasted text");
+  pi.addEventListener("click",function(){if(ta.value.trim())importText(ta.value);});
+  pb.appendChild(pi);
+  f3.appendChild(pb);
+  s3.appendChild(f3);
+  var n3=el("div","note");
+  n3.innerHTML="Export writes one JSON file holding your blocks, chores, intervals, every logged topic and the tick history. Import replaces what's here with that file.";
+  s3.appendChild(n3);
+  frag.appendChild(s3);
+
+  if(window.WardBridge&&window.WardBridge.syncStatus){
+    var sS=section("Sync");
+    var fS=el("div","form");
+    var stat=el("div","sub","Checking\u2026"); stat.id="sync-status";
+    fS.appendChild(stat);
+    var rS=el("div","form-line");
+    var bNew=el("button","btn","New sync file");
+    bNew.addEventListener("click",function(){try{window.WardBridge.syncChoose();}catch(e){}});
+    var bJoin=el("button","btn","Use an existing one");
+    bJoin.addEventListener("click",function(){try{window.WardBridge.syncJoin();}catch(e){}});
+    var bNow=el("button","btn solid","Sync now");
+    bNow.addEventListener("click",function(){if(window.WardSync)window.WardSync.syncNow();});
+    var bOff=el("button","btn danger","Stop");
+    bOff.addEventListener("click",function(){try{window.WardBridge.syncForget();}catch(e){}});
+    rS.appendChild(bNew);rS.appendChild(bJoin);rS.appendChild(bNow);rS.appendChild(bOff);
+    fS.appendChild(rS);
+    sS.appendChild(fS);
+    var nS=el("div","note");
+    nS.innerHTML="Pick one JSON file in your Google Drive and this phone keeps it current. On a second phone, choose <strong>Use an existing one</strong> and point it at the same file. The chart syncs when it opens, when you return to it, and a second or so after any change \u2014 and goes on working untouched while there is no network.";
+    sS.appendChild(nS);
+    var n2S=el("div","note");
+    n2S.innerHTML="Changes are merged field by field, not file by file, so two phones that were both offline each keep what they did \u2014 blocks ticked on one and topics logged on the other both survive. The only thing that can lose is editing the <em>same</em> item on both while offline; there the later edit wins.";
+    sS.appendChild(n2S);
+    frag.appendChild(sS);
+    if(window.WardSync){window.WardSync.refreshState();}
+  }
+
+  var s4=section("Reset");
+  var b4=el("div","btn-row");
+  var rs=el("button","btn danger","Restore the starting setup");
+  var armed=false;
+  rs.addEventListener("click",function(){
+    if(!armed){armed=true;rs.textContent="Tap again to confirm — topics are kept";return;}
+    cfg=JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    saveConfig(); render(); toast("Blocks and chores reset");
+  });
+  b4.appendChild(rs); s4.appendChild(b4);
+  frag.appendChild(s4);
+
+  if(window.WardBridge&&window.WardBridge.appVersion){
+    var v="?"; try{v=String(window.WardBridge.appVersion()||"?");}catch(e){}
+    var sv=el("section");
+    sv.appendChild(el("div","sub","Ward Chart app "+v+"  \u00b7  blocks grouped by divider with \u2191\u2193 arrived in 1.1"));
+    frag.appendChild(sv);
+  }
+  return frag;
+}
+
+function exportAll(){
+  var payload={kind:"ward-chart",version:1,exported:today(),
+    config:cfg,chores:choreDone,days:dayLog,topics:topics};
+  var text=JSON.stringify(payload,null,2);
+  if(!dl){
+    toast("Saving files isn't available here — copy from the box below.");
+    var ta=document.querySelector("textarea");
+    if(ta){ta.value=text;ta.focus();ta.select();}
+    return;
+  }
+  dl.save({filename:"ward-chart-"+today()+".json",data:text}).then(function(){
+    toast("Backup saved");
+  }).catch(function(e){
+    if(e&&e.code==="declined")return;
+    toast("Couldn't save the file.");
+  });
+}
+function importText(text){
+  var data;
+  try{data=JSON.parse(text);}catch(e){toast("That isn't valid JSON.");return;}
+  if(!data||typeof data!=="object"||!data.config){toast("That file isn't a Ward Chart backup.");return;}
+  cfg=normalizeConfig(data.config);
+  choreDone=data.chores&&typeof data.chores==="object"?data.chores:{};
+  dayLog=data.days&&typeof data.days==="object"?data.days:{};
+  var incoming=Array.isArray(data.topics)?data.topics:[];
+  if(db){
+    topics.forEach(function(t){db.doc("topics/"+t.id).delete().catch(function(){});});
+  }
+  topics=incoming.map(function(t){
+    return {id:t.id||uid(),subject:t.subject||cfg.subjects[0],title:t.title||"(untitled)",
+      taught:t.taught||today(),due:t.due||today(),stage:t.stage|0,reviews:t.reviews|0,
+      lastReviewed:t.lastReviewed||null,example:!!t.example};
+  });
+  saveConfig(); saveChores(); saveLog();
+  topics.forEach(saveTopic);
+  render(); toast("Imported "+topics.length+" topics");
+}
+
+/* ---------- reminders (Android only; the page computes, Kotlin arms) ----------
+   Each block or chore may carry a `remind` object inside config:
+     block.remind = { on, time:"HH:MM", days:[Mon..Sun 1/0], nag:minutes }
+     chore.remind = { on, time:"HH:MM", lead:daysBefore, nagDaily:bool }
+   Nothing fires unless `on` is true. The page turns these rules into concrete
+   fire times for the next 7 days and hands the list to the bridge; Kotlin
+   knows nothing about the rules, only (time, text) pairs. */
+var DAYL=["M","T","W","T","F","S","S"];
+var DAYFULL=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+var REM_HORIZON_DAYS=7, REM_CAP=150, REM_NAG_REPEATS=3;
+
+function hhmmToMinutes(s){
+  var m=/^(\d{1,2}):(\d{2})$/.exec(s||""); if(!m)return null;
+  var h=+m[1],mi=+m[2]; if(h>23||mi>59)return null; return h*60+mi;
+}
+function atLocal(dateStr,minutes){
+  var p=dateStr.split("-").map(Number);
+  return new Date(p[0],p[1]-1,p[2],0,minutes,0,0).getTime();
+}
+function weekIdx(dateStr){ /* Mon=0 .. Sun=6 */
+  var p=dateStr.split("-").map(Number);
+  return (new Date(p[0],p[1]-1,p[2]).getDay()+6)%7;
+}
+function fmtAt(ms){
+  var d=new Date(ms),t=today(),ds_=ds(d);
+  var hm=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+  if(ds_===t)return "today "+hm;
+  if(ds_===addDays(t,1))return "tomorrow "+hm;
+  return DAYFULL[weekIdx(ds_)].slice(0,3)+" "+hm;
+}
+function defaultRemind(kind){
+  return kind==="block"
+    ?{on:false,time:"08:00",days:[1,1,1,1,1,1,1],nag:0}
+    :{on:false,time:"18:00",lead:0,nagDaily:false};
+}
+
+function computeReminderSchedule(){
+  var out=[],now=Date.now(),t=today();
+  for(var d=0;d<REM_HORIZON_DAYS;d++){
+    var day=addDays(t,d), wd=weekIdx(day);
+
+    cfg.blocks.forEach(function(b){
+      var r=b.remind; if(!r||!r.on)return;
+      var mins=hhmmToMinutes(r.time); if(mins===null)return;
+      var days=(Array.isArray(r.days)&&r.days.length===7)?r.days:[1,1,1,1,1,1,1];
+      if(!days[wd])return;
+      if(d===0&&isDone(b.id))return;               // already ticked today
+      var base=atLocal(day,mins), nag=r.nag|0, reps=nag>0?REM_NAG_REPEATS:0;
+      for(var k=0;k<=reps;k++){
+        var at=base+k*nag*60000; if(at<=now)continue;
+        out.push({key:"blk:"+b.id+":"+day+":"+k,at:at,title:b.label,
+          body:k?"Still not ticked":(b.note||b.band),kind:"block",id:b.id});
+      }
+    });
+
+    cfg.chores.forEach(function(c){
+      var r=c.remind; if(!r||!r.on)return;
+      var mins=hhmmToMinutes(r.time); if(mins===null)return;
+      var due=choreDue(c), first=addDays(due,-(r.lead|0));
+      var start=diffDays(t,first)<=0?t:first;       // already due → start today
+      var fires=(day===start)||(!!r.nagDaily&&diffDays(start,day)>0);
+      if(!fires)return;
+      var at=atLocal(day,mins); if(at<=now)return;
+      var rel=diffDays(day,due);
+      out.push({key:"chr:"+c.id+":"+day,at:at,title:c.label,
+        body:rel>0?("due in "+rel+"d"):rel===0?"due today":((-rel)+"d overdue"),
+        kind:"chore",id:c.id});
+    });
+  }
+  out.sort(function(a,b){return a.at-b.at;});
+  return out.slice(0,REM_CAP);
+}
+
+var WardReminders=(function(){
+  var timer=null;
+  function bridge(){return (window.WardBridge&&window.WardBridge.scheduleReminders)?window.WardBridge:null;}
+  function push(){
+    if(!bridge())return;
+    clearTimeout(timer);
+    timer=setTimeout(function(){
+      var items=computeReminderSchedule();
+      try{window.WardBridge.scheduleReminders(JSON.stringify({items:items}));}catch(e){}
+      refresh();
+    },700);
+  }
+  function refresh(){
+    var box=document.getElementById("rem-status"); if(!box||!bridge())return;
+    var s={}; try{s=JSON.parse(window.WardBridge.remindersStatus()||"{}");}catch(e){}
+    var items=computeReminderSchedule(), next=items.length?items[0]:null, parts=[];
+    if(s.notifAllowed===false)parts.push("Notifications are blocked for this app — allow them to get any reminders.");
+    else if(s.exactAllowed===false)parts.push("Allowed. Timing may drift up to 10 minutes until exact timing is allowed.");
+    else parts.push("Allowed, exact timing on.");
+    parts.push(items.length+" scheduled over the next week"+(next?("  ·  next: "+next.title+", "+fmtAt(next.at)):""));
+    box.textContent=parts.join("  ");
+    var a=document.getElementById("rem-allow"); if(a)a.hidden=(s.notifAllowed!==false);
+    var x=document.getElementById("rem-exact"); if(x)x.hidden=(s.exactAllowed!==false);
+  }
+  function dismiss(kind,id){
+    if(!(window.WardBridge&&window.WardBridge.dismissReminder))return;
+    try{window.WardBridge.dismissReminder(kind,id);}catch(e){}
+  }
+  return {compute:computeReminderSchedule,push:push,refresh:refresh,dismiss:dismiss,available:function(){return !!bridge();}};
+})();
+window.WardReminders=WardReminders;
+
+function remindSummary(r,kind){
+  if(!r||!r.on)return "off";
+  var bits=[r.time||"--:--"];
+  if(kind==="block"){
+    var days=(Array.isArray(r.days)&&r.days.length===7)?r.days:[1,1,1,1,1,1,1];
+    var n=days.filter(Boolean).length;
+    bits.push(n===7?"daily":n===0?"no days picked":DAYL.filter(function(x,i){return days[i];}).join(" "));
+    if(r.nag|0)bits.push("again every "+r.nag+" min ×"+REM_NAG_REPEATS);
+  }else{
+    var lead=r.lead|0;
+    bits.push(lead?lead+(lead===1?" day":" days")+" before due":"on the due day");
+    if(r.nagDaily)bits.push("daily until done");
+  }
+  return bits.join("  ·  ");
+}
+
+function remindRow(item,kind){
+  var r=item.remind;
+  var wrap=el("div"); wrap.style.display="flex"; wrap.style.flexDirection="column"; wrap.style.gap="6px";
+  var line=el("div","form-line");
+  var on=!!(r&&r.on);
+  var bell=el("button","btn sm"+(on?" solid":""),on?"On":"Off");
+  bell.setAttribute("aria-label","Reminder for "+item.label); bell.setAttribute("aria-pressed",on?"true":"false");
+  bell.addEventListener("click",function(){
+    if(!item.remind)item.remind=defaultRemind(kind);
+    item.remind.on=!item.remind.on;
+    if(item.remind.on&&window.WardBridge&&window.WardBridge.requestNotificationPermission){
+      try{window.WardBridge.requestNotificationPermission();}catch(e){}
+    }
+    saveConfig(); render();
+  });
+  var nm=el("div"); nm.style.flex="1 1 140px"; nm.style.minWidth="0";
+  nm.appendChild(el("div","label",item.label));
+  nm.appendChild(el("div","sub",remindSummary(r,kind)));
+  line.appendChild(bell); line.appendChild(nm);
+  wrap.appendChild(line);
+
+  if(on){
+    var ed=el("div","form-line"); ed.style.paddingLeft="2px";
+    var tm=document.createElement("input"); tm.type="time"; tm.value=r.time||"";
+    tm.setAttribute("aria-label","Time for "+item.label); tm.style.width="auto"; tm.style.flex="0 0 auto";
+    tm.addEventListener("change",function(){r.time=tm.value;saveConfig();render();});
+    ed.appendChild(tm);
+    if(kind==="block"){
+      if(!(Array.isArray(r.days)&&r.days.length===7))r.days=[1,1,1,1,1,1,1];
+      var dg=el("div","judge");
+      DAYL.forEach(function(L,i){
+        var b=el("button","btn sm"+(r.days[i]?" solid":""),L);
+        b.setAttribute("aria-label",DAYFULL[i]+" for "+item.label); b.setAttribute("aria-pressed",r.days[i]?"true":"false");
+        b.addEventListener("click",function(){r.days[i]=r.days[i]?0:1;saveConfig();render();});
+        dg.appendChild(b);
+      });
+      ed.appendChild(dg);
+      var ng=document.createElement("select"); ng.setAttribute("aria-label","Repeat until ticked, "+item.label);
+      [[0,"no repeat"],[5,"again every 5 min"],[10,"again every 10 min"],[15,"again every 15 min"],[30,"again every 30 min"]]
+        .forEach(function(o){var op=document.createElement("option");op.value=o[0];op.textContent=o[1];if((r.nag|0)===o[0])op.selected=true;ng.appendChild(op);});
+      ng.style.width="auto"; ng.style.flex="0 0 auto";
+      ng.addEventListener("change",function(){r.nag=parseInt(ng.value,10)||0;saveConfig();render();});
+      ed.appendChild(ng);
+    }else{
+      var ld=document.createElement("select"); ld.setAttribute("aria-label","Days before due, "+item.label);
+      [[0,"on the due day"],[1,"1 day before"],[2,"2 days before"],[3,"3 days before"]]
+        .forEach(function(o){var op=document.createElement("option");op.value=o[0];op.textContent=o[1];if((r.lead|0)===o[0])op.selected=true;ld.appendChild(op);});
+      ld.style.width="auto"; ld.style.flex="0 0 auto";
+      ld.addEventListener("change",function(){r.lead=parseInt(ld.value,10)||0;saveConfig();render();});
+      ed.appendChild(ld);
+      var nd=el("button","btn sm"+(r.nagDaily?" solid":""),"Daily until done");
+      nd.setAttribute("aria-pressed",r.nagDaily?"true":"false");
+      nd.addEventListener("click",function(){r.nagDaily=!r.nagDaily;saveConfig();render();});
+      ed.appendChild(nd);
+    }
+    wrap.appendChild(ed);
+  }
+  return wrap;
+}
+
+function renderAlerts(){
+  var frag=document.createDocumentFragment();
+  if(!WardReminders.available()){
+    var s0=el("section");
+    s0.appendChild(el("div","empty","Reminders only work in the Android app — a web page can't post a notification."));
+    frag.appendChild(s0); return frag;
+  }
+  var sR=section("Reminders");
+  var fR=el("div","form");
+  var st=el("div","sub","Checking…"); st.id="rem-status"; fR.appendChild(st);
+  var row=el("div","form-line");
+  var bA=el("button","btn solid","Allow notifications"); bA.id="rem-allow"; bA.hidden=true;
+  bA.addEventListener("click",function(){try{window.WardBridge.requestNotificationPermission();}catch(e){}});
+  var bX=el("button","btn","Allow exact timing"); bX.id="rem-exact"; bX.hidden=true;
+  bX.addEventListener("click",function(){try{window.WardBridge.openExactAlarmSettings();}catch(e){}});
+  var bT=el("button","btn","Send a test");
+  bT.addEventListener("click",function(){
+    var ok=false; try{ok=!!window.WardBridge.testNotification();}catch(e){}
+    toast(ok?"Sent — check the notification shade":"Blocked — allow notifications first");
+  });
+  row.appendChild(bA); row.appendChild(bX); row.appendChild(bT);
+  fR.appendChild(row); sR.appendChild(fR);
+  frag.appendChild(sR);
+
+  var sB=section("Blocks");
+  var fB=el("div","form");
+  var any=false;
+  cfg.bands.forEach(function(band){
+    var items=cfg.blocks.filter(function(b){return b.band===band;}); if(!items.length)return;
+    fB.appendChild(el("div","grp"+(any?"":" first"),band)); any=true;
+    items.forEach(function(b){fB.appendChild(remindRow(b,"block"));});
+  });
+  sB.appendChild(fB); frag.appendChild(sB);
+
+  var sC=section("Chores");
+  var fC=el("div","form");
+  cfg.chores.forEach(function(c){fC.appendChild(remindRow(c,"chore"));});
+  sC.appendChild(fC); frag.appendChild(sC);
+
+  var n=el("div","note");
+  n.innerHTML="Everything starts <strong>off</strong>. A block reminder skips itself once the block is ticked; a chore reminder follows the due date, so doing the chore moves the next one with it. Reminders fire from this phone only; another phone with the same sync file keeps its own. Keep the count small — a phone that buzzes eighteen times a day gets muted inside a week.";
+  frag.appendChild(n);
+  WardReminders.refresh();
+  return frag;
+}
+
+function render(){
+  var keepY=window.scrollY;
+  var t=today();
+  document.getElementById("dateline").textContent=pretty(t);
+  var blocksDone=doneToday().length;
+  var st=streak();
+  document.getElementById("counters").textContent=
+    blocksDone+"/"+cfg.blocks.length+" today   ·   "+st+"d streak   ·   "+topics.length+" topics";
+  Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(b){
+    b.setAttribute("aria-selected",b.dataset.tab===tab?"true":"false");
+  });
+  view.innerHTML="";
+  if(!ready){
+    var e=el("div","empty","Opening your chart…");
+    e.style.marginTop="22px"; view.appendChild(e); return;
+  }
+  if(tab==="today")view.appendChild(renderToday());
+  else if(tab==="revision")view.appendChild(renderRevision());
+  else if(tab==="chores")view.appendChild(renderChores());
+  else if(tab==="alerts")view.appendChild(renderAlerts());
+  else view.appendChild(renderSetup());
+  if(keepY)window.scrollTo(0,keepY);
+}
+
+Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(b){
+  b.addEventListener("click",function(){
+    tab=b.dataset.tab;
+    try{localStorage.setItem("wc_tab",tab);}catch(e){}
+    render(); window.scrollTo(0,0);
+  });
+});
+
+(function(){
+  var ok=WardReminders.available();
+  var tb=document.querySelector('.tab[data-tab="alerts"]');
+  if(tb&&!ok)tb.hidden=true;
+  if(tab==="alerts"&&!ok)tab="today";
+})();
+render();
+
+/* ---------- storage ---------- */
+var loaded={config:false,chores:false,days:false,topics:false};
+function maybeReady(){
+  if(loaded.config&&loaded.chores&&loaded.days&&loaded.topics&&!ready){ready=true;render();}
+}
+(async function(){
+  try{db=await window.claude.use("db");}catch(e){db=null;}
+  try{dl=await window.claude.use("downloads");}catch(e){dl=null;}
+  if(!db){
+    document.getElementById("offline").hidden=false;
+    ready=true; render(); return;
+  }
+  var onErr=function(){ready=true;render();};
+  db.doc("config/main").onSnapshot(function(s){
+    if(s.exists){
+      var d=s.data();
+      if(d&&Array.isArray(d.blocks)&&Array.isArray(d.chores))
+        cfg=normalizeConfig(JSON.parse(JSON.stringify(d)));
+    }
+    loaded.config=true; maybeReady(); if(ready)render();
+  },onErr);
+  db.doc("state/chores").onSnapshot(function(s){
+    var d=s.exists?s.data():null;
+    choreDone=(d&&d.done&&typeof d.done==="object")?JSON.parse(JSON.stringify(d.done)):{};
+    loaded.chores=true; maybeReady(); if(ready)render();
+  },onErr);
+  db.doc("state/days").onSnapshot(function(s){
+    var d=s.exists?s.data():null;
+    dayLog=(d&&d.log&&typeof d.log==="object")?JSON.parse(JSON.stringify(d.log)):{};
+    loaded.days=true; maybeReady(); if(ready)render();
+  },onErr);
+  db.collection("topics").onSnapshot(function(q){
+    topics=q.docs.map(function(doc){
+      var d=doc.data()||{};
+      return {id:doc.id,subject:d.subject||"—",title:d.title||"(untitled)",
+        taught:d.taught||today(),due:d.due||today(),stage:d.stage|0,
+        reviews:d.reviews|0,lastReviewed:d.lastReviewed||null,example:!!d.example};
+    });
+    loaded.topics=true; maybeReady(); if(ready)render();
+  },onErr);
+  setTimeout(function(){if(!ready){ready=true;render();}},9000);
+  setTimeout(function(){WardReminders.push();},1500);
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)WardReminders.push();});
+})();
+})();
+</script>
+
+</body>
+</html>
