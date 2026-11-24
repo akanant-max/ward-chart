@@ -270,6 +270,18 @@
           return Promise.reject({ code: "unavailable", message: "Could not write the file." });
         }
       } catch (e) {}
+      /* No Android bridge: a browser or an iPad home-screen app. Hand the
+         file to the browser as a normal download (iOS shows its save sheet). */
+      try {
+        var blob = new Blob([typeof req.data === "string" ? req.data : String(req.data)],
+                            { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = String(req.filename || "ward-chart.json");
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        return Promise.resolve({ status: "saved" });
+      } catch (e2) {}
       return Promise.reject({ code: "unavailable", message: "Saving is not available here." });
     }
   };
