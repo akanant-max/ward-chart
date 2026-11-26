@@ -227,6 +227,7 @@ function normalizeConfig(c){
   if(!Array.isArray(c.intervals)||!c.intervals.length)c.intervals=DEFAULT_CONFIG.intervals.slice();
   if(!Array.isArray(c.subjects)||!c.subjects.length)c.subjects=DEFAULT_CONFIG.subjects.slice();
   if(!c.cap||c.cap<1)c.cap=DEFAULT_CONFIG.cap;
+  if(!Array.isArray(c.vacations))c.vacations=[];
   if(!Array.isArray(c.bands)||!c.bands.length){
     var seen=[];
     c.blocks.forEach(function(b){if(b.band&&seen.indexOf(b.band)<0)seen.push(b.band);});
@@ -362,10 +363,45 @@ function dueTopics(){
   return topics.filter(function(x){return diffDays(t,x.due)<=0;})
     .sort(function(a,b){return a.due<b.due?-1:(a.due>b.due?1:0);});
 }
+/* Vacation: cfg.vacations = [{from,to}] inclusive. Starting one shifts every
+   due date forward by its length, so the schedule resumes exactly as it was. */
+function inVac(day){
+  return (cfg.vacations||[]).some(function(v){return day>=v.from&&day<=v.to;});
+}
+function activeVac(){
+  var t=today(),f=null;
+  (cfg.vacations||[]).forEach(function(v){if(t>=v.from&&t<=v.to)f=v;});
+  return f;
+}
+function shiftSchedule(n){
+  Object.keys(choreDone).forEach(function(id){choreDone[id]=addDays(choreDone[id],n);});
+  topics.forEach(function(x){x.due=addDays(x.due,n);saveTopic(x);});
+  saveChores();
+}
+function startVacation(n){
+  var t=today();
+  cfg.vacations=(cfg.vacations||[]).filter(function(v){return diffDays(v.to,t)<400;}).slice(-19);
+  cfg.vacations.push({from:t,to:addDays(t,n-1)});
+  shiftSchedule(n); saveConfig();
+  toast("Paused. Back on "+prettyFull(addDays(t,n))); render();
+}
+function endVacation(){
+  var v=activeVac(); if(!v)return;
+  var t=today(),unused=diffDays(t,v.to)+1;
+  shiftSchedule(-unused);
+  v.to=addDays(t,-1);
+  if(v.to<v.from)cfg.vacations.splice(cfg.vacations.indexOf(v),1);
+  saveConfig(); toast("Welcome back — schedule resumes today"); render();
+}
 function streak(){
-  var n=0,d=today();
-  if(!dayLog[d]||!dayLog[d].length)d=addDays(d,-1);
-  while(dayLog[d]&&dayLog[d].length){n++;d=addDays(d,-1);}
+  var n=0,d=today(),g=0;
+  function logged(x){return dayLog[x]&&dayLog[x].length;}
+  if(!logged(d)&&!inVac(d))d=addDays(d,-1);
+  while(g++<5000){
+    if(inVac(d)&&!logged(d)){d=addDays(d,-1);continue;}
+    if(!logged(d))break;
+    n++;d=addDays(d,-1);
+  }
   return n;
 }
 function floorIds(){return cfg.blocks.filter(function(b){return b.floor;}).map(function(b){return b.id;});}
@@ -377,41 +413,55 @@ function doChore(c){
 }
 /* Ask how many days, show the exact due date, apply only on Confirm.
    1 = tomorrow, 7 = the same weekday next week. */
-function pushSheet(label,apply){
+function daysSheet(o){
   var bg=el("div","sheet-bg"),sh=el("div","sheet");
-  sh.setAttribute("role","dialog"); sh.setAttribute("aria-label","Push "+label);
-  sh.appendChild(el("h3",null,"Push \u201c"+label+"\u201d"));
-  sh.appendChild(el("div","sub","Days from today. 1 is tomorrow, 7 is the same day next week."));
-  var n=1,chips=el("div","chips"),inp=document.createElement("input");
-  inp.type="number"; inp.min="1"; inp.max="365"; inp.value="1"; inp.setAttribute("inputmode","numeric");
-  inp.setAttribute("aria-label","Days to push");
+  sh.setAttribute("role","dialog"); sh.setAttribute("aria-label",o.title);
+  sh.appendChild(el("h3",null,o.title));
+  sh.appendChild(el("div","sub",o.sub));
+  var n=o.start||1,chips=el("div","chips"),inp=document.createElement("input");
+  inp.type="number"; inp.min="1"; inp.max="365"; inp.value=String(n); inp.setAttribute("inputmode","numeric");
+  inp.setAttribute("aria-label",o.title+": days");
   var when=el("div","when"); when.setAttribute("aria-live","polite");
-  var okb=el("button","btn sm","Confirm");
+  var okb=el("button","btn sm",o.confirm||"Confirm");
   okb.style.background="var(--done)"; okb.style.borderColor="var(--done)"; okb.style.color="#fff";
   function upd(){
     var v=parseInt(inp.value,10); var good=v>=1&&v<=365;
     n=good?v:0;
-    when.textContent=good?"\u201c"+label+"\u201d will be due on "+prettyFull(addDays(today(),v)):"Enter a number from 1 to 365";
+    when.textContent=good?o.text(v):"Enter a number from 1 to 365";
     okb.disabled=!good;
-    Array.prototype.forEach.call(chips.children,function(b){b.setAttribute("aria-pressed",String(String(v)===b.dataset.n));});
+    Array.prototype.forEach.call(chips.children,function(b){if(b.dataset&&b.dataset.n)b.setAttribute("aria-pressed",String(String(v)===b.dataset.n));});
   }
-  [1,2,3,7].forEach(function(k){
+  o.chips.forEach(function(k){
     var b=el("button","btn sm",k===1?"1 day":k+" days"); b.dataset.n=String(k); b.setAttribute("aria-pressed","false");
     b.addEventListener("click",function(){inp.value=String(k);upd();});
     chips.appendChild(b);
   });
-  var lab=el("span","sub","  or "); chips.appendChild(lab); chips.appendChild(inp);
+  chips.appendChild(el("span","sub","  or ")); chips.appendChild(inp);
   inp.addEventListener("input",upd);
   var cancel=el("button","btn sm","Cancel"),acts=el("div","acts");
   function close(){document.removeEventListener("keydown",onkey);bg.remove();}
   function onkey(e){if(e.key==="Escape")close();}
   cancel.addEventListener("click",close);
-  okb.addEventListener("click",function(){if(!n)return;var k=n;close();apply(k);});
+  okb.addEventListener("click",function(){if(!n)return;var k=n;close();o.apply(k);});
   bg.addEventListener("click",function(e){if(e.target===bg)close();});
   document.addEventListener("keydown",onkey);
   acts.appendChild(cancel); acts.appendChild(okb);
   sh.appendChild(chips); sh.appendChild(when); sh.appendChild(acts);
   bg.appendChild(sh); document.body.appendChild(bg); upd();
+}
+function pushSheet(label,apply){
+  daysSheet({title:"Push \u201c"+label+"\u201d",
+    sub:"Days from today. 1 is tomorrow, 7 is the same day next week.",
+    chips:[1,2,3,7],
+    text:function(v){return "\u201c"+label+"\u201d will be due on "+prettyFull(addDays(today(),v));},
+    apply:apply});
+}
+function vacationSheet(){
+  daysSheet({title:"Vacation",start:7,confirm:"Start vacation",
+    sub:"Pauses everything starting today. Nothing falls due, the streak holds, reminders stay quiet.",
+    chips:[3,7,10,14],
+    text:function(v){return "Paused today through "+prettyFull(addDays(today(),v-1))+". Everything resumes on "+prettyFull(addDays(today(),v))+", exactly as it was.";},
+    apply:startVacation});
 }
 function pushChore(c){
   pushSheet(c.label,function(n){
@@ -531,6 +581,16 @@ function topicRow(t,actionable){
 function renderToday(){
   var frag=document.createDocumentFragment();
   var t=today();
+  var vac=activeVac();
+  if(vac){
+    var sv=section("Vacation","paused"),bx=el("div","note");
+    bx.innerHTML="<strong>On vacation until "+prettyFull(vac.to)+".</strong> Nothing is due and the streak is held. Resumes "+prettyFull(addDays(vac.to,1))+", exactly as it was.";
+    sv.appendChild(bx);
+    var rb=el("div","btn-row"),eb=el("button","btn","End vacation early");
+    eb.addEventListener("click",endVacation); rb.appendChild(eb); sv.appendChild(rb);
+    frag.appendChild(sv);
+    return frag;
+  }
   var chores=dueChores(), tops=dueTopics();
   var capped=tops.slice(0,Math.max(1,cfg.cap|0));
   var hidden=tops.length-capped.length;
@@ -575,6 +635,9 @@ function renderToday(){
   var lb=el("button","btn","Light day — push what's due");
   lb.addEventListener("click",lightDay);
   br.appendChild(lb);
+  var vb=el("button","btn","Vacation\u2026");
+  vb.addEventListener("click",vacationSheet);
+  br.appendChild(vb);
   s2.appendChild(br);
   var fl=el("div","note");
   fl.innerHTML="<strong>The floor.</strong> On a bad day do only the rows marked <em>floor</em>: bed, sink block, ten minutes of movement, thirty minutes of recall, sink block again. Miss once and it's noise. Miss twice and it's a new habit.";
@@ -989,12 +1052,13 @@ function computeReminderSchedule(){
   var out=[],now=Date.now(),t=today();
   for(var d=0;d<REM_HORIZON_DAYS;d++){
     var day=addDays(t,d), wd=weekIdx(day);
+    var vacDay=inVac(day);
 
     cfg.blocks.forEach(function(b){
       var r=b.remind; if(!r||!r.on)return;
       var mins=hhmmToMinutes(r.time); if(mins===null)return;
       var days=(Array.isArray(r.days)&&r.days.length===7)?r.days:[1,1,1,1,1,1,1];
-      if(!days[wd])return;
+      if(!days[wd]||vacDay)return;
       if(d===0&&isDone(b.id))return;               // already ticked today
       var base=atLocal(day,mins), nag=r.nag|0, reps=nag>0?REM_NAG_REPEATS:0;
       for(var k=0;k<=reps;k++){
@@ -1009,6 +1073,7 @@ function computeReminderSchedule(){
       var mins=hhmmToMinutes(r.time); if(mins===null)return;
       var due=choreDue(c), first=addDays(due,-(r.lead|0));
       var start=diffDays(t,first)<=0?t:first;       // already due → start today
+      for(var g=0;g<400&&inVac(start);g++)start=addDays(start,1);   // never fire during a vacation
       var fires=(day===start)||(!!r.nagDaily&&diffDays(start,day)>0);
       if(!fires)return;
       var at=atLocal(day,mins); if(at<=now)return;
