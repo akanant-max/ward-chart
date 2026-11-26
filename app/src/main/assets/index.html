@@ -127,6 +127,15 @@ textarea{font-family:var(--font-mono);font-size:11.5px;min-height:110px;resize:v
 .stat{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11.5px;color:var(--soft);font-variant-numeric:tabular-nums;margin-top:8px}
 .stat b{color:var(--ink);font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:50}
+.sheet{background:var(--card);color:var(--ink);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));box-sizing:border-box}
+.sheet h3{margin:0 0 4px;font-size:16px}
+.sheet .sub{color:var(--soft);font-size:13px}
+.sheet .chips{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.sheet .chips .btn[aria-pressed="true"]{background:var(--accent-wash);border-color:var(--accent)}
+.sheet input[type=number]{width:72px;font:inherit;padding:6px 8px;background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:6px}
+.sheet .when{margin:12px 0;padding:10px 12px;background:var(--accent-wash);border-radius:8px;font-weight:600}
+.sheet .acts{display:flex;gap:8px;justify-content:flex-end}
 </style>
 
 <div class="top"><div class="top-in">
@@ -160,6 +169,8 @@ function diffDays(a,b){var x=a.split("-").map(Number),y=b.split("-").map(Number)
   return Math.round((Date.UTC(y[0],y[1]-1,y[2])-Date.UTC(x[0],x[1]-1,x[2]))/864e5);}
 function pretty(s){var p=s.split("-").map(Number);var d=new Date(p[0],p[1]-1,p[2]);
   return d.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});}
+function prettyFull(s){var p=s.split("-").map(Number);var d=new Date(p[0],p[1]-1,p[2]);
+  return d.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",year:"numeric"});}
 function relative(due,t){var n=diffDays(t,due);
   if(n<0)return{text:(-n)+"d late",cls:"late"};
   if(n===0)return{text:"today",cls:"now"};
@@ -364,9 +375,49 @@ function doChore(c){
   choreDone[c.id]=today(); saveChores(); WardReminders.dismiss("chore",c.id);
   toast(c.label+" — next in "+c.every+" days"); render();
 }
+/* Ask how many days, show the exact due date, apply only on Confirm.
+   1 = tomorrow, 7 = the same weekday next week. */
+function pushSheet(label,apply){
+  var bg=el("div","sheet-bg"),sh=el("div","sheet");
+  sh.setAttribute("role","dialog"); sh.setAttribute("aria-label","Push "+label);
+  sh.appendChild(el("h3",null,"Push \u201c"+label+"\u201d"));
+  sh.appendChild(el("div","sub","Days from today. 1 is tomorrow, 7 is the same day next week."));
+  var n=1,chips=el("div","chips"),inp=document.createElement("input");
+  inp.type="number"; inp.min="1"; inp.max="365"; inp.value="1"; inp.setAttribute("inputmode","numeric");
+  inp.setAttribute("aria-label","Days to push");
+  var when=el("div","when"); when.setAttribute("aria-live","polite");
+  var okb=el("button","btn sm","Confirm");
+  okb.style.background="var(--done)"; okb.style.borderColor="var(--done)"; okb.style.color="#fff";
+  function upd(){
+    var v=parseInt(inp.value,10); var good=v>=1&&v<=365;
+    n=good?v:0;
+    when.textContent=good?"\u201c"+label+"\u201d will be due on "+prettyFull(addDays(today(),v)):"Enter a number from 1 to 365";
+    okb.disabled=!good;
+    Array.prototype.forEach.call(chips.children,function(b){b.setAttribute("aria-pressed",String(String(v)===b.dataset.n));});
+  }
+  [1,2,3,7].forEach(function(k){
+    var b=el("button","btn sm",k===1?"1 day":k+" days"); b.dataset.n=String(k); b.setAttribute("aria-pressed","false");
+    b.addEventListener("click",function(){inp.value=String(k);upd();});
+    chips.appendChild(b);
+  });
+  var lab=el("span","sub","  or "); chips.appendChild(lab); chips.appendChild(inp);
+  inp.addEventListener("input",upd);
+  var cancel=el("button","btn sm","Cancel"),acts=el("div","acts");
+  function close(){document.removeEventListener("keydown",onkey);bg.remove();}
+  function onkey(e){if(e.key==="Escape")close();}
+  cancel.addEventListener("click",close);
+  okb.addEventListener("click",function(){if(!n)return;var k=n;close();apply(k);});
+  bg.addEventListener("click",function(e){if(e.target===bg)close();});
+  document.addEventListener("keydown",onkey);
+  acts.appendChild(cancel); acts.appendChild(okb);
+  sh.appendChild(chips); sh.appendChild(when); sh.appendChild(acts);
+  bg.appendChild(sh); document.body.appendChild(bg); upd();
+}
 function pushChore(c){
-  choreDone[c.id]=addDays(today(),-(c.every-1)); saveChores();
-  toast("Pushed to tomorrow"); render();
+  pushSheet(c.label,function(n){
+    choreDone[c.id]=addDays(today(),n-c.every); saveChores();
+    toast("Due "+prettyFull(addDays(today(),n))); render();
+  });
 }
 function reviewTopic(t,solid){
   var stage=solid?Math.min(t.stage+1,cfg.intervals.length-1):Math.max(t.stage-1,0);
@@ -376,7 +427,12 @@ function reviewTopic(t,solid){
   toast(solid?"Back in "+cfg.intervals[stage]+" days":"Again in "+cfg.intervals[stage]+" days");
   render();
 }
-function pushTopic(t){t.due=addDays(today(),1);saveTopic(t);toast("Pushed to tomorrow");render();}
+function pushTopic(t){
+  pushSheet(t.title,function(n){
+    t.due=addDays(today(),n); saveTopic(t);
+    toast("Due "+prettyFull(t.due)); render();
+  });
+}
 function addTopic(subject,title){
   var t={id:uid(),subject:subject,title:title,taught:today(),due:addDays(today(),cfg.intervals[0]),
     stage:0,reviews:0,lastReviewed:null,example:false};
@@ -421,7 +477,7 @@ function choreRow(c,showNext){
   var body=el("div","body");
   body.appendChild(el("div","label",c.label));
   var bits=["every "+c.every+"d"];
-  if(choreDone[c.id])bits.push("last "+choreDone[c.id]);
+  if(choreDone[c.id]&&choreDone[c.id]<=today())bits.push("last "+choreDone[c.id]);
   if(showNext)bits.push("next "+due);
   if(c.note)bits.push(c.note);
   body.appendChild(el("div","sub",bits.join("  ·  ")));

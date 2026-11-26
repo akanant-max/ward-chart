@@ -487,3 +487,7 @@ appcompat 1.7.0 · webkit 1.11.0 · app version 1.3.
 Chosen for a first-try Gradle sync rather than for being current. Android Studio
 will offer an upgrade; accepting is fine. `minSdk 26` is what lets the launcher
 be an adaptive icon with no PNG fallbacks.
+
+## Push dialog (v1.4)
+
+Push on a due chore or topic opens `pushSheet(label, apply)`: days field (1-365, chips 1/2/3/7), a live line "X will be due on <weekday d month yyyy>", and Confirm/Cancel. Nothing is written until Confirm. 1 = tomorrow, 7 = same weekday next week, always counted from today. Chores store `choreDone[id] = today + n - every`, so `choreDue` (= last + every) lands on the chosen date; when n > every, `last` is a future date and the "last" label is hidden. Light day still pushes everything one day with no dialog.

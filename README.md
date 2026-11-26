@@ -120,7 +120,7 @@ Keep the count small. Three or four well-placed reminders beat eighteen muted on
 
 ## Which build am I on?
 
-Setup tab, bottom: a line reading **Ward Chart app 1.3** (or whatever the current
+Setup tab, bottom: a line reading **Ward Chart app 1.4** (or whatever the current
 version is). If that line is missing you're on a build older than 1.1, which
 predates grouped blocks and the reorder arrows — rebuild from the newest zip.
 
